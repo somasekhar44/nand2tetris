@@ -1,0 +1,82 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/05/CPU.hdl
+
+/**
+ * The Central Processing unit (CPU).
+ * Consists of an ALU and a set of registers, designed to fetch and 
+ * execute instructions written in the Hack machine language.
+ * In particular, functions as follows:
+ * Executes the inputted instruction according to the Hack machine 
+ * language specification. The D and A in the language specification
+ * refer to CPU-resident registers, while M refers to the external
+ * memory location addressed by A, i.e. to Memory[A]. The inM input 
+ * holds the value of this location. If the current instruction needs 
+ * to write a value to M, the value is placed in outM, the address 
+ * of the target location is placed in the addressM output, and the 
+ * writeM control bit is asserted. (When writeM=0, any value may 
+ * appear in outM). The outM and writeM outputs are combinational: 
+ * they are affected instantaneously by the execution of the current 
+ * instruction. The addressM and pc outputs are clocked: although they 
+ * are affected by the execution of the current instruction, they commit 
+ * to their new values only in the next time unit. If reset=1 then the 
+ * CPU jumps to address 0 (i.e. sets pc=0 in next time unit) rather 
+ * than to the address resulting from executing the current instruction. 
+ */
+
+CHIP CPU {
+
+    IN  inM[16],         // M value input  (M = contents of RAM[A])
+        instruction[16], // Instruction for execution
+        reset;           // Signals whether to re-start the current
+                         // program (reset=1) or continue executing
+                         // the current program (reset=0).
+
+    OUT outM[16],        // M value output
+        writeM,          // Write into M? 
+        addressM[15],    // Address in data memory (of M)
+        pc[15];          // address of next instruction
+
+    PARTS:
+    // Put your code here:
+
+    Not(in=instruction[15] , out=aInstruction);
+    Not(in=aInstruction , out=cInstruction);
+
+//Code to select the input to the registerA
+    Mux16(a=outM1 , b=instruction , sel=aInstruction , out=inA);
+
+//If the instruction is a (C instruction and the d1 bit is set) or (A instruction) , the register A is loaded . Also the OUT addressM is also set
+    And(a=cInstruction , b=instruction[5] , out=loadApt1);
+    Or(a=aInstruction , b=loadApt1 , out=loadA);
+    ARegister(in=inA , load=loadA , out=outA , out[0..14] = addressM , out =pcIn);
+
+//selecting one input to the ALU. Either the output from A register or the inM
+    And(a=cInstruction , b=instruction[12] , out=ctrlAM);
+    Mux16(a=outA , b=inM , sel=ctrlAM , out=outAM);
+
+
+// D register code
+    And(a=cInstruction , b=instruction[4] , out=loadD);
+    DRegister(in=outM1 , load=loadD , out=outD);
+
+// control signal if to set the writeM
+    And(a=cInstruction , b=instruction[3] , out=writeM);
+
+// PC
+    And(a=zr , b=instruction[1] , out=zero);
+    And(a=ng , b=instruction[2] , out=neg);
+    Or(a=zr , b=ng , out=temp1);
+    Not(in=temp1 , out=temp2);
+    And(a=temp2 , b=instruction[0] , out=pos);
+
+    Or(a=zero , b=neg , out=negZero);
+    Or(a=negZero , b=pos , out=pcpreload);
+
+    And(a=cInstruction , b=pcpreload , out=pcload);
+    PC(in=pcIn  , load=pcload , inc=true , reset=reset  , out[0..14]=pc);
+
+// The computation part of the ALU    
+    ALU(x=outD , y=outAM , zx=instruction[11] , nx=instruction[10] , zy=instruction[9] , ny=instruction[8] , f=instruction[7] , no=instruction[6] , out=outM , out=outM1 , zr=zr , ng=ng);
+}
