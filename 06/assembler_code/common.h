@@ -2,10 +2,12 @@
 #include<stdlib.h>
 #include<string.h>
 #include<stdint.h>
+#include<ctype.h>
+#include<inttypes.h>
 
 FILE *input_stream;
 int end_pos;
-char curr_command[100];
+char curr_command[200];
 int curr_command_len;
 
 enum command_Type{
@@ -39,3 +41,21 @@ uint16_t symbol();
 char* parser_dest();
 char* parser_comp();
 char* parser_jump();
+
+// Stuff related to symbol table
+struct symbol_table_entry{
+    char symbol[50];
+    uint16_t address;
+};
+
+struct symbol_table_t{
+    struct symbol_table_entry entry[2000];
+    int symbol_count;
+}symbol_table;
+
+void symbol_table_constructor();
+void add_symbol_table_entry(char *symbol , uint16_t address);
+int contains(char *symbol);
+uint16_t get_address(char *symbol);
+uint16_t rom_number;
+uint16_t ram_number;

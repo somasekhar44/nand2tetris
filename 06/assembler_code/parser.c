@@ -1,6 +1,39 @@
 #include "common.h"
 #include<stdlib.h>
 
+size_t trimwhitespace(char *out, size_t len, const char *str)
+{
+  if(len == 0)
+    return 0;
+
+  const char *end;
+  size_t out_size;
+
+  // Trim leading space
+  while(isspace(*str)) str++;
+
+  if(*str == 0)  // All spaces?
+  {
+    *out = 0;
+    return 1;
+  }
+
+  // Trim trailing space
+  end = str + strlen(str) - 1;
+  while(end > str && isspace(*end)) end--;
+  end++;
+
+  // Set output size to minimum of trimmed string length and buffer size minus 1
+  out_size = (end - str) < len-1 ? (end - str) : len-1;
+
+  // Copy trimmed string and add null terminator
+  memcpy(out, str, out_size);
+  out[out_size] = 0;
+
+  return out_size;
+}
+
+
 //This will initialize the input_stream by opening the input_file
 void parser_initializer(char* input_file){
 	if( (input_stream = fopen(input_file,"r")) == NULL){
@@ -16,39 +49,70 @@ void parser_initializer(char* input_file){
 //returns 1 if the file has still some more commands to be parsed , else returns 0
 int hasMoreCommands(){
 	int curr_pos = ftell(input_stream);
+	
 	if(curr_pos == end_pos)
 		return 0;
 
+	char *temp_command =  calloc(200,1);
+
 	while(1){
-		if(fgets(curr_command , 80 , input_stream) == NULL){
+		if(fgets(curr_command , 200 , input_stream) == NULL){
+			free(temp_command);
 			return 0;
 		}
-		if((curr_command[0] == ' ') || (curr_command[0] == '\n') || (curr_command[0] == '\r')){
-			CODE_DEBUG("empty line..\n");
-		} else if(strncmp(curr_command , "//" , 2) == 0){
-			CODE_DEBUG("Commented line..\n");
-		} else{
-			CODE_DEBUG("Has a valid command.. , len = %d , curr_command[0]= %d \n" , strlen(curr_command) , curr_command[0]);
+		// New code to parse the command
+		strcpy(temp_command , curr_command);
+		trimwhitespace(temp_command, strlen(curr_command), curr_command);
+		if(strlen(temp_command) == 0){
+			curr_pos = ftell(input_stream);
+			continue;
+		}
+		char *slash_pointer = strchr(temp_command , '/');
+		if(slash_pointer == NULL){
+			strcpy(curr_command , temp_command);
 			fseek(input_stream , curr_pos , SEEK_SET);
+			free(temp_command);
+			return 1;
+		} else if(slash_pointer == temp_command){
+			//printf("Commented line : %s\n", curr_command);
+			//continue;
+		} else {
+			temp_command[slash_pointer -  temp_command] = '\0';
+			trimwhitespace(curr_command, strlen(temp_command), temp_command);
+
+			fseek(input_stream , curr_pos , SEEK_SET);
+			free(temp_command);
 			return 1;
 		}
 		curr_pos = ftell(input_stream);
 	}
+	free(temp_command);
 	return 1;
 }
 
 //Loads the next command into curr_command.
 void advance(){
-	if(fgets(curr_command , 80 , input_stream) == NULL){
+	char *temp_command =  calloc(200,1);
+	if(fgets(curr_command , 200 , input_stream) == NULL){
 		fprintf(stderr, "Unable to read the next command.exiting\n" );
 		exit(0);
 	}
-	curr_command_len = strlen(curr_command);
-	if((curr_command[curr_command_len-2] == '\n') || ((curr_command[curr_command_len-2] == '\r')))
-		curr_command[curr_command_len-2] = '\0';
-	if((curr_command[curr_command_len-1] == '\n') || ((curr_command[curr_command_len-1] == '\r')))
-		curr_command[curr_command_len-1] = '\0';	
-	curr_command_len = strlen(curr_command);
+	strcpy(temp_command , curr_command);
+	trimwhitespace(temp_command, strlen(curr_command), curr_command);
+	char *slash_pointer = strchr(temp_command , '/');
+	//printf("Line read : %s\n", curr_command);
+	if(slash_pointer == NULL){
+		strcpy(curr_command , temp_command);
+		curr_command_len = strlen(curr_command);
+		//printf("Current command in advance : %s\n", curr_command);
+	} else {
+		temp_command[slash_pointer -  temp_command] = '\0';
+		trimwhitespace(curr_command, strlen(temp_command), temp_command);
+		//printf("Current command in advance : %s\n", curr_command);
+		curr_command_len = strlen(curr_command);
+	}
+	free(temp_command);
+	return;
 }
 
 //returns the current command type
@@ -58,11 +122,7 @@ int currentCommand(){
 			return A_COMMAND;
 			break;
 		case '(':
-			printf("%d\n", curr_command_len);
-			for(int i=0 ; i < curr_command_len ; i++){
-				if(curr_command[i] == ')')
-					return L_COMMAND;
-			}
+				return L_COMMAND;
 			break;
 		default :
 			return C_COMMAND;
@@ -73,17 +133,24 @@ int currentCommand(){
 
 // returns the symbol in the current command
 uint16_t symbol(){
-	/*char *curr_symbol = malloc(50);
-
-	if(curr_command_type == A_COMMAND){
-		strcpy(curr_symbol,curr_command+1);
-	}else if(curr_command_type == L_COMMAND){
-		strncpy(curr_symbol, curr_command+1,curr_command_len-2);
-	}
-	return curr_symbol;*/
 	uint16_t curr_symbol = 0;
+	
 	if(curr_command_type == A_COMMAND){
-		curr_symbol = (uint16_t)atoi(curr_command+1);
+		if(isdigit(curr_command[1])){ // Implies that the given command does not have any symbol
+			curr_symbol = (uint16_t)atoi(curr_command+1);
+			//printf("Does not have any symbols.\n");
+		} else {
+			//printf("Has symbols.\n");
+			if(contains(curr_command+1)){
+				return get_address(curr_command+1);
+			} else {
+				//printf("adding symbol : %s, value : %" PRId16 "\n",curr_command+1 , ram_number );
+				add_symbol_table_entry(curr_command+1 , ram_number);
+				ram_number = ram_number+1;
+				return ram_number-1;
+			}
+		}
+		
 	}
 	return curr_symbol;
 }
@@ -98,7 +165,8 @@ char* parser_dest(){
 		free(dest);
 		return NULL;
 	}
-	strncpy(dest , curr_command , equals_index);
+	strcpy(dest,"");
+	strncat(dest , curr_command , equals_index);
 	return dest;
 }
 
@@ -112,8 +180,10 @@ char* parser_comp(){
 			semi_colon_index = i;
 	}
 
-	strncpy(comp , curr_command+equalto_index+1 , semi_colon_index - equalto_index - 1);
+	strcpy(comp,"");
+	strncat(comp , curr_command+equalto_index+1 , semi_colon_index - equalto_index -1);
 	//printf("%d , %d\n", end_index - start_index +1 , strlen(comp) );
+	//printf("curr_command = %s , comp = %s\t",curr_command ,comp );
 	return comp;
 }
 
@@ -125,6 +195,7 @@ char* parser_jump(){
 		free(jump);
 		return NULL;
 	}
-	strcpy(jump , curr_command+semi_colon_index+1);
+	strcpy(jump,"");
+	strcat(jump , curr_command+semi_colon_index+1);
 	return jump;
 }
